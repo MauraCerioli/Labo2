@@ -1,12 +1,14 @@
-﻿using System.Diagnostics.CodeAnalysis;
+﻿using System.Diagnostics;
+using System.Diagnostics.CodeAnalysis;
 using System.Linq.Expressions;
 using System.Reflection;
+using System.Reflection.Metadata;
 using MyAttribute;
 
 namespace Executer {
     internal class Program {
-        static void AlternativeMain() {
-            var assembly = Assembly.LoadFrom("..\\..\\..\\..\\MyLibrary\\bin\\Debug\\net8.0\\MyLibrary.dll");
+        static void ExtendedSolution(Assembly assembly) {
+            Console.WriteLine("Alternative approach: Execute me chooses its constructor");
             foreach (var t in assembly.GetTypes()) {
                 if (!t.IsClass)
                     continue;
@@ -43,27 +45,47 @@ namespace Executer {
                 }
             }
 
-            bool FoundConstructor(Type?[] actualTypes, Type t, [NotNullWhen(true)] out ConstructorInfo? c) {
+            bool FoundConstructor(object?[] arguments, Type t, [NotNullWhen(true)] out ConstructorInfo? c, [NotNullWhen(true)] out object?[]? actualParameters) {
                 var constructors = t.GetConstructors();
                 foreach (var candidate in constructors) {
-                    var expectedTypes = candidate.GetParameters();
-                    var min = Math.Min(expectedTypes.Length, actualTypes.Length);
+                    var formalParameters = candidate.GetParameters();
+                    actualParameters = new object?[formalParameters.Length];
                     bool typesAsExpected = true;
-                    typesAsExpected = TypesAsExpected(min - 1, actualTypes, expectedTypes);
+                    var j = 0;
+                    while (j < formalParameters.Length && !formalParameters[j].HasDefaultValue) {
+                        if (formalParameters[j].ParameterType.IsByRef) {
+                            AbortTypeCheck(out actualParameters, out typesAsExpected, "reference parameter expected. No way");
+                            break;
+                        }
+                        if (j >= arguments.Length) {
+                            AbortTypeCheck(out actualParameters, out typesAsExpected, "missing parameter.No way");
+                            break;
+                        }
+                        if (!OneTypeOk(arguments[j]?.GetType(), formalParameters[j].ParameterType)) {
+                            AbortTypeCheck(out actualParameters, out typesAsExpected, "wrong parameter type. No way");
+                            break;
+                        }
+                        actualParameters[j] = arguments[j];
+                    }
+                    if(!typesAsExpected) continue;
+                    //non-optional arguments are ok
+
+                    var min = Math.Min(formalParameters.Length, arguments.Length);
+                    typesAsExpected = TypesAsExpected(min - 1, arguments, formalParameters);
                     if (!typesAsExpected) continue;
-                    switch (expectedTypes.Length - actualTypes.Length) {
+                    switch (formalParameters.Length - arguments.Length) {
                         case < 0://wrong unless last parameters is a params
-                            if (!expectedTypes[min - 1].GetCustomAttributes<ParamArrayAttribute>().Any()) typesAsExpected = false;
+                            if (!formalParameters[min - 1].GetCustomAttributes<ParamArrayAttribute>().Any()) typesAsExpected = false;
                             else {
-                                var paramsType = expectedTypes[min - 1].ParameterType.GetElementType()!;//the last parameters is params, its type must be an array
-                                for (int i = min - 1; i < actualTypes.Length && typesAsExpected; i++) typesAsExpected = OneTypeOk(actualTypes[i], paramsType);
+                                var paramsType = formalParameters[min - 1].ParameterType.GetElementType()!;//the last parameters is params, its type must be an array
+                                for (int i = min - 1; i < arguments.Length && typesAsExpected; i++) typesAsExpected = OneTypeOk(arguments[i], paramsType);
                             }
                             break;
                         case 0:
-                            typesAsExpected = OneTypeOk(actualTypes[min - 1], expectedTypes[min - 1].ParameterType);
+                            typesAsExpected = OneTypeOk(arguments[min - 1], formalParameters[min - 1].ParameterType);
                             break;
                         case > 0: //wrong unless the extra parameters have default value
-                            for (int i = min - 1; i < expectedTypes.Length && typesAsExpected; i++) typesAsExpected = expectedTypes[i].HasDefaultValue;
+                            for (int i = min - 1; i < formalParameters.Length && typesAsExpected; i++) typesAsExpected = formalParameters[i].HasDefaultValue;
                             break;
                     }
 
@@ -123,39 +145,19 @@ namespace Executer {
                 }
             }*/
         }
+        private static void AbortTypeCheck(out object?[]? actualParameters, out bool typesAsExpected, string debugMessage) {
+            Debug.WriteLine(debugMessage);
+            actualParameters = null;
+            typesAsExpected = false;
+            return;
+        }
 
 
         static void Main(string[] args) {
             var path = @"..\..\..\..\MyLibrary\bin\Debug\net8.0\MyLibrary.dll";
             var a = Assembly.LoadFrom(path);
-            foreach (var t in a.GetTypes()) {
-                if (!t.IsClass) continue;
-                foreach (var m in t.GetMethods()) 
-                    foreach (var e in m.GetCustomAttributes<ExecuteMeAttribute>()) {
-                        object? o;
-                        try {
-                            o = Activator.CreateInstance(t);
-                        }
-                        catch (Exception exception) {
-                            goto TypeLoop;
-                        }
-                        try {
-                            m.Invoke(o, e.Arguments);
-                        }
-                        catch (TargetParameterCountException ex) {
-                            Console.WriteLine($"Wrong arguments' number ({m.GetParameters().Length} expected, {e.Arguments.Length} received)");
-                        }
-                        catch (ArgumentException argEx) {
-                            Console.WriteLine($"Unacceptable Arguments ({argEx.Message})");
-                        }
-                        catch (Exception exception) {
-                            Console.WriteLine($"Something went wrong ({exception.Message})");
-                        }
-                    }
-                TypeLoop: Console.WriteLine(t.FullName);
-            }
-            Console.WriteLine("Alternative approach: Execute me chooses its constructor");
-           AlternativeMain();
+            //BasicSolution(a);
+            //ExtendedSolution(a);
             /*
              * GetInstance sort of works, but its design goes against logical expectations:
              * If using default value creates a usable object, why the constructor without parameters
@@ -189,6 +191,34 @@ namespace Executer {
                 return result;
             }
 
+        }
+        private static void BasicSolution(Assembly a) {
+            foreach (var t in a.GetTypes()) {
+                if (!t.IsClass) continue;
+                foreach (var m in t.GetMethods()) 
+                foreach (var e in m.GetCustomAttributes<ExecuteMeAttribute>()) {
+                    object? o;
+                    try {
+                        o = Activator.CreateInstance(t);
+                    }
+                    catch (Exception exception) {
+                        goto TypeLoop;
+                    }
+                    try {
+                        m.Invoke(o, e.Arguments);
+                    }
+                    catch (TargetParameterCountException ex) {
+                        Console.WriteLine($"Wrong arguments' number ({m.GetParameters().Length} expected, {e.Arguments.Length} received)");
+                    }
+                    catch (ArgumentException argEx) {
+                        Console.WriteLine($"Unacceptable Arguments ({argEx.Message})");
+                    }
+                    catch (Exception exception) {
+                        Console.WriteLine($"Something went wrong ({exception.Message})");
+                    }
+                }
+                TypeLoop: Console.WriteLine(t.FullName);
+            }
         }
     }
 }

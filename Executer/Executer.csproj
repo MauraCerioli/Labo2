@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\MyAttribute\MyAttribute.csproj" />
+    <ProjectReference Include="..\MyLibrary\MyLibrary.csproj" />
   </ItemGroup>
 
 </Project>

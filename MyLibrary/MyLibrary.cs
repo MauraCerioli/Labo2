@@ -8,16 +8,23 @@ namespace MyLibrary {
         }
         [ExecuteMePlus(null, new object?[] { 3, "pip", "f" })]
         [ExecuteMePlus(new Object?[] { ctorArg }, new Object?[] { 0, new string[] { "pip", "f" } })]
-        [ExecuteMePlus(new Object?[] { ctorArg }, new Object?[] { 1,  "pip", "f" })]
+        [ExecuteMePlus(new Object?[] { ctorArg },  1,  "pip", "f" )]
         [ExecuteMePlus(new Object?[] { ctorArg },  2, "pip", "f" )]
         [ExecuteMePlus(new Object?[] { ctorArg }, new Object?[] { 3,  "pip" })]
         [ExecuteMePlus(new Object?[] { ctorArg }, new Object?[] { "pip", "f" })]
-        public void MM1(int x = 9, params string[] whatever) {
-            Console.WriteLine($"MM1 x={x}, whatever = {whatever}");
-            var sdg = new ExecuteMePlusAttribute(null, new object?[] { 3, "pip", "f" });
+        public void MM1(int x, params string[] whatever) {
+            Console.WriteLine($"MM1 x={x}, whatever = {string.Join(",", whatever)}");
         }
     }
     public class Foo {
+        [ExecuteMe(1, "pip", "f")]
+        public void M0(int x = 9, params string[] whatever) {
+            Console.WriteLine($"M0 x={x}, whatever = {string.Join(",", whatever)}");
+        }
+        [ExecuteMe()]
+        public void MDefault(int x = 9) {
+            Console.WriteLine($"MDefault x={x}");
+        }
         [ExecuteMe]
         public void M1() {
             Console.WriteLine("M1");
